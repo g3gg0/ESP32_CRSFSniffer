@@ -616,17 +616,18 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
     case 401:
     case 402:
     {
+      uint8_t receive_buffer[64];
+      char buf[128];
+      
       if(rssi < scanRssi)
       {
         scanRssi = rssi;
       }
-      uint8_t receive_buffer[64];
       
       for(int fifoPos = 0; fifoPos < currentLength; fifoPos++)
       {
         receive_buffer[fifoPos] = SX1276.readFifo();
       }
-      char buf[128];
       for(int pos = 0; pos < 0x17; pos++)
       {
         sprintf(&buf[pos*3], "%02X ", receive_buffer[pos]);

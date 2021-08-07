@@ -95,7 +95,7 @@ void SX1276Class::writeBitrate(uint32_t rate)
 
 void SX1276Class::writeFreqDev(uint32_t dev)
 {
-  uint32_t regFreqDev = dev * 32000000ULL / (1<<19);
+  uint32_t regFreqDev = (uint64_t)dev * (1<<19) / 32000000ULL;
   
   writeRegister(REG_FDEV_H, regFreqDev >> 8);
   writeRegister(REG_FDEV_L, regFreqDev >> 0);
