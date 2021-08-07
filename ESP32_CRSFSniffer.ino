@@ -614,11 +614,13 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
   switch(state)
   {
     case 401:
+    case 402:
       if(rssi < scanRssi)
       {
-        Serial.printf("Got a packet on channel #%d\n", currentChannel);
         scanRssi = rssi;
       }
+      Serial.printf("Got a packet on channel #%d, RSSI -%d\n", currentChannel, rssi/2);
+      SX1276.setRx();
       break;
       
     case 201:
@@ -1012,6 +1014,7 @@ void loop()
 
   const char *menu_entries[] = { "Hop Scan", "Band Scan", "Follow", "Analyze", "----" };
   static int menu_pos = 0;
+  static uint32_t currentScanChan = 0;
   
 
   bool buttonPressed = digitalRead(0) == LOW;
@@ -1030,7 +1033,7 @@ void loop()
     int pressDuration = currentTime - buttonPressTime;
 
     /* no matter if pressed, when it was longer than two seconds */
-    if(pressDuration > 2000)
+    if(pressDuration > 1000)
     {
       buttonPressTime = -1;
       if(state == 300)
@@ -1071,6 +1074,20 @@ void loop()
       {
         menu_pos = (menu_pos + 1) % COUNT(menu_entries);
       }
+      else if(state == 401)
+      {
+        state = 402;
+        currentScanChan = 0;
+        setChan(currentScanChan, false);
+        scanRssi = 200;
+      }
+      else if(state == 402)
+      {
+        state = 402;
+        currentScanChan = (currentScanChan + 1) % 50;
+        setChan(currentScanChan, false);
+        scanRssi = 200;
+      }
       else
       {
         currentDisplay = (currentDisplay + 1) % displayCount;
@@ -1100,9 +1117,30 @@ void loop()
       
     case 401:
     {
-      static uint32_t currentScanChan = 0;
-      static uint32_t lastTime = 0;
-
+      if(currentTime - lastTime > 100 || scanRssi != 200)
+      {
+        float oldValue = plotScan->GetSample(currentScanChan);
+        float value = scanRssi * -0.5f;
+        if(oldValue < value)
+        {
+          plotScan->SetSample(currentScanChan, value);
+        }
+        currentScanChan = (currentScanChan + 1) % 50;
+        setChan(currentScanChan, false);
+        scanRssi = 200;
+        Display->clear();
+        plotScan->DrawFullPlot(0, 0, 54, 60);
+        char msg[33];
+        snprintf(msg, 32, "ch#%d", currentScanChan);
+        Display->setFont(ArialMT_Plain_16);
+        Display->drawString(68, 48, msg);
+        Display->display();
+      }
+      break;
+    }
+      
+    case 402:
+    {
       if(currentTime - lastTime > 20)
       {
         float oldValue = plotScan->GetSample(currentScanChan);
@@ -1111,11 +1149,12 @@ void loop()
         {
           plotScan->SetSample(currentScanChan, value);
         }
-        scanRssi = 200;
-        currentScanChan = (currentScanChan + 1) % 50;
-        setChan(currentScanChan, false);
         Display->clear();
         plotScan->DrawFullPlot(0, 0, 54, 60);
+        char msg[33];
+        snprintf(msg, 32, "ch#%d", currentScanChan);
+        Display->setFont(ArialMT_Plain_16);
+        Display->drawString(68, 48, msg);
         Display->display();
       }
       break;
