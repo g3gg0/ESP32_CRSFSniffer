@@ -615,14 +615,28 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
   {
     case 401:
     case 402:
+    {
       if(rssi < scanRssi)
       {
         scanRssi = rssi;
       }
-      Serial.printf("Got a packet on channel #%d, RSSI -%d\n", currentChannel, rssi/2);
+      uint8_t receive_buffer[64];
+      
+      for(int fifoPos = 0; fifoPos < currentLength; fifoPos++)
+      {
+        receive_buffer[fifoPos] = SX1276.readFifo();
+      }
+      char buf[128];
+      for(int pos = 0; pos < 0x17; pos++)
+      {
+        sprintf(&buf[pos*3], "%02X ", receive_buffer[pos]);
+      }
+    
+      Serial.printf("ch#%02d: %s, RSSI -%03d, FEI %i\n", currentChannel, buf, rssi/2, fei);
       SX1276.setRx();
       break;
-      
+    }
+     
     case 201:
     {
       Serial.printf("Sync to slot 0\n");
@@ -1141,7 +1155,7 @@ void loop()
       
     case 402:
     {
-      if(currentTime - lastTime > 20)
+      if(currentTime - lastTime > 50)
       {
         float oldValue = plotScan->GetSample(currentScanChan);
         float value = scanRssi * -0.5f;
@@ -1152,10 +1166,11 @@ void loop()
         Display->clear();
         plotScan->DrawFullPlot(0, 0, 54, 60);
         char msg[33];
-        snprintf(msg, 32, "ch#%d", currentScanChan);
+        snprintf(msg, 32, "ch#%d %c", currentScanChan, (scanRssi == 200)?' ':'*');
         Display->setFont(ArialMT_Plain_16);
         Display->drawString(68, 48, msg);
         Display->display();
+        scanRssi = 200;
       }
       break;
     }
