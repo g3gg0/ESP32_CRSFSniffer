@@ -26,6 +26,20 @@ void PlotClass::AddSample(float value)
   }
 }
 
+float PlotClass::GetSample(int pos)
+{
+  return Values[pos];
+}
+
+void PlotClass::SetSample(int pos, float value)
+{
+  Values[pos] = value;
+  if(pos >= Entries)
+  {
+    Entries = pos + 1;
+  }
+}
+
 void PlotClass::Clear()
 {
   StartPos = 0;

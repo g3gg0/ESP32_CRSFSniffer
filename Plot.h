@@ -15,6 +15,8 @@ class PlotClass
   public:
   PlotClass(SSD1306Wire *disp, const char *name, uint32_t groupSize, uint32_t groups);
   void AddSample(float value);
+  void SetSample(int pos, float value);
+  float GetSample(int pos);
   void Clear();
   void DrawFullPlot(int x, int y, int w, int h, bool scatter = true);
 

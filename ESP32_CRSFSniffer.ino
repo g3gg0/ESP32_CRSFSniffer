@@ -90,6 +90,7 @@ float freqCorrectionDown = 0;
 
 int16_t statRssiUp = 0;
 int16_t statRssiDown = 0;
+int16_t scanRssi = 0;
 uint64_t lastPacketTimestamp = 0;
 
 timeslotInfo_t timeslotMap[50];
@@ -124,6 +125,7 @@ PlotClass *plotFreq;
 PlotClass *plotSchedLen;
 PlotClass *plotLossUp;
 PlotClass *plotLossDown;
+PlotClass *plotScan;
 
 
 void IRAM_ATTR setChan(uint16_t chan, bool downlink)
@@ -611,6 +613,14 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
   
   switch(state)
   {
+    case 401:
+      if(rssi < scanRssi)
+      {
+        Serial.printf("Got a packet on channel #%d\n", currentChannel);
+        scanRssi = rssi;
+      }
+      break;
+      
     case 201:
     {
       Serial.printf("Sync to slot 0\n");
@@ -983,6 +993,7 @@ void setup()
   plotFreq = new PlotClass(Display, "PktRate", 56, 64);
   plotLossUp = new PlotClass(Display, "Loss up", 56, 64);
   plotLossDown = new PlotClass(Display, "Loss dn", 56, 64);
+  plotScan = new PlotClass(Display, "Scan", 1, 50);
   Serial.println("Setup done");
 
   /* start with the hop-following sniff code */
@@ -998,6 +1009,10 @@ void loop()
   static int currentDisplay = 0;
   int displayCount = 9;
   uint32_t currentTime = millis();
+
+  const char *menu_entries[] = { "Hop Scan", "Band Scan", "Follow", "Analyze", "----" };
+  static int menu_pos = 0;
+  
 
   bool buttonPressed = digitalRead(0) == LOW;
 
@@ -1017,15 +1032,49 @@ void loop()
     /* no matter if pressed, when it was longer than two seconds */
     if(pressDuration > 2000)
     {
-      /* start hopping scan */
-      state = 0;
-      digitalWrite(LED,LOW);
-      timerAlarmDisable(scheduleTimer);
       buttonPressTime = -1;
+      if(state == 300)
+      {
+        switch(menu_pos)
+        {
+          case 0:
+            /* start hopping scan */
+            state = 0;
+            break;
+            
+          case 1:
+            /* start band scan */
+            state = 400;
+            break;
+            
+          case 2:
+            /* follow hopping */
+            state = 200;
+            break;
+            
+          case 3:
+            /* analyze channel 0 */
+            state = 100;
+            break;
+        }
+      }
+      else
+      {
+        state = 300;
+        digitalWrite(LED,LOW);
+        timerAlarmDisable(scheduleTimer);
+      }
     }
     else if(!buttonPressed && pressDuration > 100)
     {
-      currentDisplay = (currentDisplay + 1) % displayCount;
+      if(state == 300)
+      {
+        menu_pos = (menu_pos + 1) % COUNT(menu_entries);
+      }
+      else
+      {
+        currentDisplay = (currentDisplay + 1) % displayCount;
+      }
       buttonPressTime = -1;
     }
   }
@@ -1041,6 +1090,61 @@ void loop()
   
   switch(state)
   {
+    case 400:
+      for(int pos = 0; pos < 50; pos++)
+      {
+        plotScan->SetSample(pos, -100);
+      }
+      state++;
+      break;
+      
+    case 401:
+    {
+      static uint32_t currentScanChan = 0;
+      static uint32_t lastTime = 0;
+
+      if(currentTime - lastTime > 20)
+      {
+        float oldValue = plotScan->GetSample(currentScanChan);
+        float value = scanRssi * -0.5f;
+        if(oldValue < value)
+        {
+          plotScan->SetSample(currentScanChan, value);
+        }
+        scanRssi = 200;
+        currentScanChan = (currentScanChan + 1) % 50;
+        setChan(currentScanChan, false);
+        Display->clear();
+        plotScan->DrawFullPlot(0, 0, 54, 60);
+        Display->display();
+      }
+      break;
+    }
+      
+    case 300:
+      Display->setFont(ArialMT_Plain_24);
+      Display->clear();
+      Display->drawString(0, 0, "Menu");
+      Display->setFont(ArialMT_Plain_10);
+      for(int pos = 0; pos < COUNT(menu_entries); pos++)
+      {
+        if(pos > 3)
+        {
+          break;
+        }
+        int entry = menu_pos + pos;
+        const char *menu_name = menu_entries[entry % COUNT(menu_entries)];
+        if(entry == menu_pos)
+        {
+          Display->drawString(8, 26 + 1 + pos * 10, menu_name);
+          Display->drawString(8+1, 26 + pos * 10, menu_name);
+          Display->drawString(8+1, 26 + 1 + pos * 10, menu_name);
+        }
+        Display->drawString(8, 26 + pos * 10, menu_name);
+      }
+      Display->display();
+      break;
+      
     case 200:
       Display->setFont(ArialMT_Plain_24);
       Display->clear();
