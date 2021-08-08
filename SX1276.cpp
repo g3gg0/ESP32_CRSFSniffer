@@ -67,12 +67,12 @@ int SX1276Class::begin()
 
 int32_t SX1276Class::readFei()
 {
-  uint16_t ret = 0;
+  int16_t ret = 0;
 
   ret |= (readRegister(REG_FEI_H) << 8);
   ret |= (readRegister(REG_FEI_L) << 0);
 
-  return (int32_t)ret * 32000000 / (1<<19);
+  return (int64_t)ret * 32000000ULL / (1<<19);
 }
 
 uint8_t SX1276Class::readRssi()

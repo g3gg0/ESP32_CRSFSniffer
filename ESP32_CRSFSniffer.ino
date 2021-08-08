@@ -1127,6 +1127,8 @@ void loop()
       {
         plotScan->SetSample(pos, -100);
       }
+      freqCorrectionUp = 0;
+      freqCorrectionDown = 0;
       state++;
       break;
       
