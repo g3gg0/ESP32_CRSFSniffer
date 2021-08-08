@@ -322,7 +322,7 @@ void IRAM_ATTR parseChannels(uint8_t *buffer)
     value |= ((uint32_t)buffer[1 + bitPos]) << chanBits;
     chanBits += 8;
 
-    /* when we got enough (11) bits, treat this as a sample */
+    /* when we got enough (10) bits, treat this as a sample */
     if(chanBits >= 10)
     {
       int chanOffset = 0;
@@ -985,6 +985,7 @@ void setup()
   
   Display = new SSD1306Wire(0x3c, SDA_OLED, SCL_OLED, RST_OLED, GEOMETRY_128_64);
   Display->init();
+  Display->setContrast(5, 5, 0);
   Display->flipScreenVertically();  
   Display->setFont(ArialMT_Plain_10);
   Display->clear();
@@ -1023,7 +1024,9 @@ void loop()
   char msg[32];
   static int lastTime = 0;
   static int buttonPressTime = 0;
+  static int lastButtonPressTime = 0;
   static int currentDisplay = 0;
+  static float lastContrast = 0;
   int displayCount = 9;
   uint32_t currentTime = millis();
 
@@ -1036,9 +1039,24 @@ void loop()
 
   buttonPressed |= chanPercent(8) > 80;
 
+  float contrast = 255;
+  
+  if(currentTime - lastButtonPressTime > 10000)
+  {
+    contrast = 0;
+  }
+
+  if((int)contrast != (int)lastContrast)
+  {
+    lastContrast = (contrast + 15.0f*lastContrast) / 16.0f;
+    Display->setBrightness(lastContrast);
+  }
+
+  
   /* when button gets pressed, save timestamp */
   if(buttonPressed && buttonPressTime == 0)
   {
+    lastButtonPressTime = currentTime;
     buttonPressTime = currentTime;
   }
   
