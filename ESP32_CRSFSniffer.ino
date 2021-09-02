@@ -32,6 +32,7 @@
    else you will get crashes
 */
 
+
 /*
 
     Rx  03 AA FC F7 1F 80 A1 84 12 4A 28 00 00 00 00 00 00 00 00 00 00 32 E2
@@ -1163,9 +1164,9 @@ void loop()
             
           case 2:
             /* start hopping scan */
-            cfgChanDist = 112000;
-            cfgStartFreq = 860000000;
-            state = 0;
+            //cfgChanDist = 112000;
+            //cfgStartFreq = 860000000;
+            //state = 0;
             break;
             
           case 3:
@@ -1177,9 +1178,9 @@ void loop()
             
           case 4:
             /* start hopping scan */
-            cfgChanDist = 112000;
-            cfgStartFreq = 915000000;
-            state = 0;
+            //cfgChanDist = 112000;
+            //cfgStartFreq = 915000000;
+            //state = 0;
             break;
             
           case 5:
