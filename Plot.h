@@ -10,7 +10,6 @@ class PlotClass
   uint32_t Entries = 0;
   uint32_t GroupSize = 0;
   uint32_t Groups = 0;
-  uint32_t ValueCount = 0;
 
   public:
   PlotClass(SSD1306Wire *disp, const char *name, uint32_t groupSize, uint32_t groups);
@@ -18,7 +17,8 @@ class PlotClass
   void SetSample(int pos, float value);
   float GetSample(int pos);
   void Clear();
-  void DrawFullPlot(int x, int y, int w, int h, bool scatter = true);
+  void DrawFullPlot(int x, int y, int w, int h, bool scatter = true, bool desc = true);
+  uint32_t ValueCount = 0;
 
   private:
   void DrawGrid(int x, int y, int w, int h, int *xStart, int *yStart, int *xSpan, int *ySpan);

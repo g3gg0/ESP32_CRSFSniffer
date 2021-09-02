@@ -32,6 +32,39 @@
    else you will get crashes
 */
 
+/*
+
+    Rx  03 AA FC F7 1F 80 A1 84 12 4A 28 00 00 00 00 00 00 00 00 00 00 32 E2
+        || |                           | || |                        | \___/
+        || |                           | || |    telemetry payload   |  CRC
+        || |   80 bits                 | ||  \______________________/
+        || |    = 10 bits * 8 sticks   | | \_ telemetry flags?   
+        || |                           |  \__ telemetry length     
+        ||  \_________________________/        
+        ||
+        | \_ packet type: 3 normal FSK uplink data
+        |                 1 50Hz mode uplink data?
+        |                  
+         \__ flags: 2 sticks 8-11
+
+
+
+    Tx  03 75 64 00 00 00 00 00 00 00 00 00 0F
+        || |   | |                        |  \_ CRC
+        || |   | |    telemetry payload   |
+        ||  \_/   \______________________/
+        ||   |
+        ||    \_ cycling metadata (RSSI etc)
+        ||
+        | \_ packet type: 3 normal FSK downlink data
+        |                 1 50Hz mode downlink data? 
+        |                 B telemetry payload  
+        |
+         \__ flags: 2 did not receive uplink for 8 times
+                    8 metadata cycle start
+                   
+
+ */
 #if !defined(CONFIG_DISABLE_HAL_LOCKS)
 #error "please add  '#define CONFIG_DISABLE_HAL_LOCKS 1'  at about line 66 of esp32-hal.h else this code will crash"
 #endif
@@ -46,7 +79,7 @@
 #include "esp32-hal-timer.h"
 
 #define COUNT(x) (sizeof(x)/sizeof((x)[0]))
-#define CONFIG_MAGIC 0xC0FFFEF5
+#define CONFIG_MAGIC 0xC0FFFEF6
 
 typedef struct
 {
@@ -58,6 +91,7 @@ typedef struct
 {
   uint32_t magic;
   uint8_t hoppingSequence[150];
+  uint64_t startFreq;
 } receiver_config;
 
 receiver_config config;
@@ -76,14 +110,12 @@ uint64_t prevTimestamp = 0;
 int checkChan = 0;
 int retries = 0;
 
-//uint32_t frequencyRegVals[] = { 0xD70AD0, 0xD71B74, 0xD72C18, 0xD73CBB, 0xD74D60, 0xD75E03, 0xD76EA7, 0xD77F4B, 0xD78FEF, 0xD7A092, 0xD7B137, 0xD7C1DA, 0xD7D27E, 0xD7E322, 0xD7F3C6, 0xD80469, 0xD8150E, 0xD825B1, 0xD83655, 0xD846F9, 0xD8579D, 0xD86840, 0xD878E5, 0xD88988, 0xD89A2C, 0xD8AAD0, 0xD8BB74, 0xD8CC17, 0xD8DCBC, 0xD8ED5F, 0xD8FE03, 0xD90EA7, 0xD91F4B, 0xD92FEE, 0xD94093, 0xD95136, 0xD961DA, 0xD9727E, 0xD98322, 0xD993C5, 0xD9A46A, 0xD9B50D, 0xD9C5B2, 0xD9D655, 0xD9E6F9, 0xD9F79D, 0xDA0841, 0xDA18E4, 0xDA2989, 0xDA3A2C, 0xDA4AD0, 0xDA5B74, 0xDA6C18, 0xDA7CBB, 0xDA8D60, 0xDA9E03, 0xDAAEA7, 0xDABF4B, 0xDACFEF, 0xDAE092, 0xDAF137, 0xDB01DA, 0xDB127E, 0xDB2322, 0xDB33C6, 0xDB4469, 0xDB550E, 0xDB65B1, 0xDB7655, 0xDB86F9, 0xDB979D, 0xDBA840, 0xDBB8E5, 0xDBC988, 0xDBDA2C, 0xDBEAD0, 0xDBFB74, 0xDC0C17, 0xDC1CBC, 0xDC2D5F, 0xDC3E03, 0xDC4EA7, 0xDC5F4B, 0xDC6FEE, 0xDC8093, 0xDC9136, 0xDCA1DA, 0xDCB27E, 0xDCC322, 0xDCD3C5, 0xDCE46A, 0xDCF50D, 0xDD05B2, 0xDD1655, 0xDD26F9, 0xDD379D, 0xDD4841, 0xDD58E4, 0xDD6989, 0xDD7A2C };
-uint32_t frequencies[] = { 860168945, 860428955, 860688964, 860948913, 861208984, 861468933, 861728942, 861988952, 862248962, 862508911, 862768981, 863028930, 863288940, 863548950, 863808960, 864068908, 864328979, 864588928, 864848938, 865108947, 865368957, 865628906, 865888977, 866148925, 866408935, 866668945, 866928955, 867188903, 867448974, 867708923, 867968933, 868228942, 868488952, 868748901, 869008972, 869268920, 869528930, 869788940, 870048950, 870308898, 870568969, 870828918, 871088989, 871348938, 871608947, 871868957, 872128967, 872388916, 872648986, 872908935, 873168945, 873428955, 873688964, 873948913, 874208984, 874468933, 874728942, 874988952, 875248962, 875508911, 875768981, 876028930, 876288940, 876548950, 876808960, 877068908, 877328979, 877588928, 877848938, 878108947, 878368957, 878628906, 878888977, 879148925, 879408935, 879668945, 879928955, 880188903, 880448974, 880708923, 880968933, 881228942, 881488952, 881748901, 882008972, 882268920, 882528930, 882788940, 883048950, 883308898, 883568969, 883828918, 884088989, 884348938, 884608947, 884868957, 885128967, 885388916, 885648986, 885908935,  };
-//uint8_t hoppingSequence[] = { 0, 6, 28, 11, 39, 23, 17, 9, 37, 1, 48, 38, 31, 3, 49, 46, 25, 15, 44, 8, 27, 47, 24, 2, 29, 10, 43, 40, 26, 42, 7, 4, 19, 33, 12, 5, 36, 22, 45, 14, 20, 35, 32, 13, 16, 30, 21, 0, 18, 28, 11, 41, 23, 17, 34, 37, 1, 6, 38, 31, 39, 49, 46, 9, 15, 44, 48, 27, 47, 3, 2, 29, 25, 43, 40, 8, 42, 7, 24, 19, 33, 10, 5, 36, 26, 45, 14, 4, 35, 32, 12, 16, 30, 22, 0, 18, 20, 11, 41, 13, 17, 34, 21, 1, 6, 28, 31, 39, 23, 46, 9, 37, 44, 48, 38, 47, 3, 49, 29, 25, 15, 40, 8, 27, 7, 24, 2, 33, 10, 43, 36, 26, 42, 14, 4, 19, 32, 12, 5, 30, 22, 45, 18, 20, 35, 41, 13, 16, 34, 21 };
 uint8_t hoppingPos = 0;
 uint32_t cfgBitrate = 85000;
 uint32_t cfgFreqDev = 42300;
 uint32_t cfgChanDist = 260010;
-uint64_t cfgStartFreq = 860168000ULL;
+uint64_t cfgStartFreq = 860000000ULL;
+bool enableAfc = false;
 
 float freqCorrectionUp = 0;
 float freqCorrectionDown = 0;
@@ -94,7 +126,7 @@ int16_t scanRssi = 0;
 uint64_t lastPacketTimestamp = 0;
 
 timeslotInfo_t timeslotMap[50];
-static const float packet_ms = 6666.666666666f * 1.00101f;
+float packet_ms = 6666.666666666f * 1.00101f;
 hw_timer_t * scheduleTimer = NULL;
 
 uint32_t zeroSyncTime[10];
@@ -103,6 +135,10 @@ uint64_t prevSyncStart = 0;
 uint32_t channelExpects[10];
 bool synced = false;
 uint32_t losses = 0;
+
+uint64_t freqScanFreq = 859500000ULL;
+uint64_t freqScanFreqCur = 0;
+uint32_t freqScanBw = 10000;
 
 
 uint32_t statUpScheduled = 0;
@@ -131,20 +167,20 @@ PlotClass *plotScan;
 void IRAM_ATTR setChan(uint16_t chan, bool downlink)
 {
   uint16_t chanAbs = chan + (downlink ? 50 : 0);
-  uint32_t freq = cfgStartFreq + chanAbs * cfgChanDist + (downlink ? freqCorrectionDown : freqCorrectionUp);
+  uint32_t freq = config.startFreq + chanAbs * cfgChanDist + (downlink ? freqCorrectionDown : freqCorrectionUp);
 
   currentChannel = chan;
   currentDirectionDown = downlink;
   currentLength = downlink ? 0x0D : 0x17;
   
   SX1276.setStandby();
-  SX1276.writePayloadLength(currentLength);
-  SX1276.writeBitrate(cfgBitrate);
-  SX1276.writeFreqDev(cfgFreqDev);
+  SX1276.writeAfc(0);
   SX1276.writeFreq(freq);
+  SX1276.writePayloadLength(currentLength);
+  SX1276.writeRegister(0x0C, 0x23);
 
   /* AgcAutoOn and AGC PreambleDetect RxTrigger */
-  SX1276.writeRxConfig(0x08 | 6);
+  SX1276.writeRxConfig(0x08 | 6 | (enableAfc ? 0x10 : 0));
 
   SX1276.setRx();
 }
@@ -164,7 +200,7 @@ bool IRAM_ATTR calc_channel(uint32_t *slotDelta, int32_t *remainder, uint64_t ti
   return true;
 }
 
-void IRAM_ATTR addDelta(uint8_t channel, uint64_t timestamp, uint64_t startTimestamp)
+int32_t IRAM_ATTR addDelta(uint8_t channel, uint64_t timestamp, uint64_t startTimestamp)
 {
   uint64_t delta = timestamp - startTimestamp;
   uint32_t slotDelta = 0;
@@ -175,7 +211,7 @@ void IRAM_ATTR addDelta(uint8_t channel, uint64_t timestamp, uint64_t startTimes
   if(remainder > 10 || remainder < -10)
   {
     Serial.printf("OFF : Channel #%2u %3u (%7llu us, remainder %3i, %llu %llu)\n", channel, slotDelta, delta, remainder, timestamp, startTimestamp);
-    return;
+    return remainder;
   }
   timeslotInfo_t *slot = &timeslotMap[channel];
 
@@ -184,18 +220,20 @@ void IRAM_ATTR addDelta(uint8_t channel, uint64_t timestamp, uint64_t startTimes
     if(slot->slots[pos] == slotDelta)
     {
       Serial.printf("SKIP: Channel #%2u %3u (%7llu us, remainder %3i) - already contained\n", channel, slotDelta, delta, remainder);
-      return;
+      return remainder;
     }
   }
 
   if(slot->entries >= 4)
   {
     Serial.printf("FAIL: Channel #%2u %3u (%7llu us, remainder %3i) - already enough\n", channel, slotDelta, delta, remainder);
-    return;
+    return remainder;
   }
   
   slot->slots[slot->entries++] = slotDelta;
   Serial.printf("ADD : Channel #%2u %3u (%7llu us, remainder %3i, %llu %llu)\n", channel, slotDelta, delta, remainder, timestamp, startTimestamp);
+  
+  return remainder;
 }
 
 void IRAM_ATTR timer_isr_body(uint64_t timestamp)
@@ -539,6 +577,7 @@ void IRAM_ATTR parseDownlink(uint8_t *buffer)
 void IRAM_ATTR parseUplink(uint8_t *buffer)
 {
   bool first = buffer[0] & 0x80;
+  bool alternate = buffer[0] & 0x20;
   uint8_t type = buffer[0] & 0x0F;
   uint8_t lenExtra = (buffer[11] & 0xF0) >> 4;
   uint8_t flagExtra = (buffer[11] & 0x0F);
@@ -610,6 +649,7 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
 
   uint8_t rssi = SX1276.readRssi();
   int32_t fei = SX1276.readFei();
+  int32_t afc = SX1276.readAfc();
   
   switch(state)
   {
@@ -706,8 +746,8 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
         digitalWrite(LED, HIGH);
         statRssiUp = (31.0f*statRssiUp + rssi) / 32.0f;
         plotRssiUp->AddSample(rssi * -0.5f);
-        freqCorrectionUp += fei / 1000.0f;
-        plotFCorrUp->AddSample(fei);
+        freqCorrectionUp += afc / 1000.0f;
+        plotFCorrUp->AddSample(afc);
         
         parseUplink(receive_buffer);
       }
@@ -716,8 +756,8 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
         digitalWrite(LED, LOW);
         statRssiDown = (31.0f*statRssiDown + rssi) / 32.0f;
         plotRssiDown->AddSample(rssi * -0.5f);
-        freqCorrectionDown += fei / 1000.0f;
-        plotFCorrDown->AddSample(fei);
+        freqCorrectionDown += afc / 1000.0f;
+        plotFCorrDown->AddSample(afc);
         
         parseDownlink(receive_buffer);
       }
@@ -789,10 +829,23 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
     }
       
     case 1:
-      //Serial.printf("Sync\n");
+      prevTimestamp = timestamp;
+      Serial.printf("Sync at %d kHz fei %i afc %i\n", (uint32_t)(config.startFreq / 1000), fei, afc);
+
+      if(!retries)
+      {
+        config.startFreq += afc;
+        enableAfc = false;
+      }
+      retries++;
+
+      if(retries > 2)
+      {
+        Serial.printf("Sync at %d kHz -> proceed\n", (uint32_t)(config.startFreq / 1000));
+        prevTimestamp = 0;
+        state++;
+      }
       setChan(0, scanDownlink);
-      prevTimestamp = 0;
-      state++;
       break;
       
     case 2:
@@ -804,8 +857,9 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
       if(prevTimestamp != 0)
       {
         uint32_t delta = (uint32_t)(timestamp - prevTimestamp);
+          //Serial.printf("delta %d\n", delta);
         
-        if(delta > 373000 && delta < 374000)
+        if(delta > 365000 && delta < 374000)
         {
           startTimestamp = timestamp;
           setChan(checkChan, scanDownlink);
@@ -816,13 +870,21 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
       }
 
       prevTimestamp = timestamp;
-      SX1276.setRx();
+      setChan(0, scanDownlink);
       break;
     }
 
     case 3:
     {
-      addDelta(checkChan, timestamp, startTimestamp);
+      int32_t remainder = addDelta(checkChan, timestamp, startTimestamp);
+
+      /* try to compensate clock drift */
+      if(remainder != 0 && abs(remainder) < 10)
+      {
+        //packet_ms *= 1.0f + remainder / 100000.0f;
+        startTimestamp += (remainder * packet_ms) / 100;
+        //Serial.printf("packet_ms: %2.2f\n", packet_ms);
+      }
 
       if(retries++ >= 3*20 || timeslotMap[checkChan].entries >= 3)
       {
@@ -837,12 +899,20 @@ void IRAM_ATTR fifo_isr_body(uint64_t timestamp)
           break;
         }
 
-        state = 2;
-        setChan(0, scanDownlink);
+        /* when the drift gets to high resync to compensate clock drift. only checks last packet in this channel, so leave some margin */
+        if(/*(checkChan % 10) == 0 || */ abs(remainder) > 6)
+        {
+          state = 2;
+          setChan(0, scanDownlink);
+        }
+        else
+        {
+          setChan(checkChan, scanDownlink);
+        }
         break;
       }
 
-      SX1276.setRx();
+      setChan(checkChan, scanDownlink);
       break;
     }
   }
@@ -944,6 +1014,7 @@ void load_config()
     config.magic = CONFIG_MAGIC;
     
     memset((void *)&config.hoppingSequence, 0x00, sizeof(config.hoppingSequence));
+    config.startFreq = cfgStartFreq;
     save_config();
   }
 }
@@ -970,7 +1041,7 @@ void setup()
   Serial.printf("[i]   Setup SPIFFS\n");
   if(!SPIFFS.begin(true))
   {
-      Serial.println("      [E] mount failed");
+    Serial.println("      [E] mount failed");
   }
   Serial.printf("[i]   Load config\n");
   load_config();
@@ -978,8 +1049,11 @@ void setup()
   Serial.printf("[i]   Setup SX1276\n");
   if(!SX1276.begin())
   {
-      Serial.println("[      [E] init failed");
+    Serial.println("[      [E] init failed");
   }
+  
+  SX1276.writeBitrate(cfgBitrate);
+  SX1276.writeFreqDev(cfgFreqDev);
  
   Serial.printf("[i]   Setup Display\n");
   
@@ -1011,11 +1085,11 @@ void setup()
   plotFreq = new PlotClass(Display, "PktRate", 56, 64);
   plotLossUp = new PlotClass(Display, "Loss up", 56, 64);
   plotLossDown = new PlotClass(Display, "Loss dn", 56, 64);
-  plotScan = new PlotClass(Display, "Scan", 1, 50);
+  plotScan = new PlotClass(Display, "Scan", 1, 100);
   Serial.println("Setup done");
 
   /* start with the hop-following sniff code */
-  state = 200;
+  state = 0;
 }
 
 
@@ -1023,6 +1097,7 @@ void loop()
 {
   char msg[32];
   static int lastTime = 0;
+  static int lastUpdateTime = 0;
   static int buttonPressTime = 0;
   static int lastButtonPressTime = 0;
   static int currentDisplay = 0;
@@ -1030,7 +1105,7 @@ void loop()
   int displayCount = 9;
   uint32_t currentTime = millis();
 
-  const char *menu_entries[] = { "Hop Scan", "Band Scan", "Follow", "Analyze", "----" };
+  const char *menu_entries[] = { "Display", "Scan 868", "Scan 868 CE (ToDo)", "Scan 915", "Scan 915 AU (ToDo)", "Band Scan", "Freq Scan", "Analyze", "----" };
   static int menu_pos = 0;
   static uint32_t currentScanChan = 0;
   
@@ -1039,9 +1114,10 @@ void loop()
 
   buttonPressed |= chanPercent(8) > 80;
 
+  /* fade out display to prevent burn-in */
   float contrast = 255;
   
-  if(currentTime - lastButtonPressTime > 10000)
+  if(currentTime - lastButtonPressTime > 60000)
   {
     contrast = 0;
   }
@@ -1074,23 +1150,54 @@ void loop()
         switch(menu_pos)
         {
           case 0:
-            /* start hopping scan */
-            state = 0;
-            break;
-            
-          case 1:
-            /* start band scan */
-            state = 400;
-            break;
-            
-          case 2:
             /* follow hopping */
             state = 200;
             break;
             
+          case 1:
+            /* start hopping scan */
+            cfgChanDist = 260000;
+            cfgStartFreq = 860000000;
+            state = 0;
+            break;
+            
+          case 2:
+            /* start hopping scan */
+            cfgChanDist = 112000;
+            cfgStartFreq = 860000000;
+            state = 0;
+            break;
+            
           case 3:
+            /* start hopping scan */
+            cfgChanDist = 260000;
+            cfgStartFreq = 900000000;
+            state = 0;
+            break;
+            
+          case 4:
+            /* start hopping scan */
+            cfgChanDist = 112000;
+            cfgStartFreq = 915000000;
+            state = 0;
+            break;
+            
+          case 5:
+            /* start band scan */
+            state = 400;
+            break;
+            
+          case 6:
+            /* start freq scan */
+            state = 500;
+            break;
+            
+          case 7:
             /* analyze channel 0 */
             state = 100;
+            break;
+            
+          case 8:
             break;
         }
       }
@@ -1137,9 +1244,66 @@ void loop()
       buttonPressTime = 0;
     }
   }
-  
+
   switch(state)
   {
+    case 500:
+      freqCorrectionUp = 0;
+      freqCorrectionDown = 0;
+      currentScanChan = 0;
+      state++;
+      break;
+
+    case 501:
+    {
+      if(currentScanChan >= plotScan->ValueCount)
+      {
+        currentScanChan = 0;
+      }
+      freqScanFreqCur = freqScanFreq + currentScanChan * freqScanBw;
+      SX1276.setStandby();
+      SX1276.writeRxBw(freqScanBw);
+      SX1276.writeRxConfig(0);
+      SX1276.writeRegister(0x0E, 3);
+      SX1276.writeFreq(freqScanFreqCur);
+      SX1276.setRx();
+      //plotScan->SetSample(currentScanChan, -100);
+      state++;
+      break;
+    }
+
+    case 502:
+    {
+      float oldValue = plotScan->GetSample(currentScanChan);
+      float value = SX1276.readRssi() * -0.5f;
+      if(oldValue < value)
+      {
+        plotScan->SetSample(currentScanChan, value);
+      }
+      
+      if(currentTime - lastTime > 20)
+      {
+        lastTime = currentTime;
+        currentScanChan++;
+        state = 501;
+      }
+
+      if(currentTime - lastUpdateTime > 100)
+      {
+        lastUpdateTime = currentTime;
+        Display->clear();
+        plotScan->DrawFullPlot(0, 0, 100, 60, true, false);
+        char msg[33];
+        snprintf(msg, 32, "%d kHz", (uint32_t)( freqScanFreqCur /1000));
+        Display->setFont(ArialMT_Plain_10);
+        Display->drawString(64, 46, msg);
+        Display->display();
+      }
+      
+      break;
+    }
+
+      
     case 400:
       for(int pos = 0; pos < 50; pos++)
       {
@@ -1207,8 +1371,8 @@ void loop()
         {
           break;
         }
-        int entry = menu_pos + pos;
-        const char *menu_name = menu_entries[entry % COUNT(menu_entries)];
+        int entry = (menu_pos + pos + COUNT(menu_entries) - 1) % COUNT(menu_entries);
+        const char *menu_name = menu_entries[entry];
         if(entry == menu_pos)
         {
           Display->drawString(8, 26 + 1 + pos * 10, menu_name);
@@ -1228,6 +1392,8 @@ void loop()
 
       Serial.printf("Init hopping follow\n");
 
+      SX1276.init();
+
       setChan(0, false);
       state++;
       break;
@@ -1238,6 +1404,7 @@ void loop()
       Display->clear();
       Display->drawString(0, 0, "Sync...");
       Display->display();
+      enableAfc = true;
       
       break;
     }
@@ -1346,7 +1513,7 @@ void loop()
       //Display->drawString(0, 0, "Init channel 0 analysis");
       Display->display();
       Serial.printf("Init channel 0 analysis\n");
-
+      SX1276.init();
       setChan(0, false);
       state++;
       break;
@@ -1361,13 +1528,65 @@ void loop()
       Display->display();
       
       Serial.printf("Init hopping scan\n");
+
+      memset(&timeslotMap, 0x00, sizeof(timeslotMap));
       addDelta(0, 0, 0);
 
-      SX1276.setStandby();
-      SX1276.setStandby();
-      setChan(0, false);
-      SX1276.setRx();
+      freqCorrectionUp = 0;
+      freqCorrectionDown = 0;
+      SX1276.init();
+      
+      SX1276.writeAfcBw(100000);
+      enableAfc = true;
+      config.startFreq = cfgStartFreq;
+
+      retries = 0;
       state++;
+      
+      setChan(0, false);
+      break;
+    }
+
+    case 1:
+    {
+      bool skip = false;
+      
+      if(!retries)
+      {
+        if((currentTime - lastTime) > 500)
+        {
+           skip = true;
+        }
+      }
+      else
+      {
+        if((currentTime - lastTime) > 2000)
+        {
+          Serial.printf("timed out\n");
+          skip = true;
+        }
+      }
+      
+      if(skip)
+      {
+        lastTime = currentTime;
+
+        config.startFreq += 50000;
+        enableAfc = true;
+        retries = 0;
+        setChan(0, false);
+        
+        char msg[33];
+        snprintf(msg, 32, "Check %d.%03d MHz", (uint32_t)(config.startFreq /1000000), (uint32_t)(config.startFreq /1000) % 1000);
+        Display->setFont(ArialMT_Plain_24);
+        Display->clear();
+        Display->drawString(0, 0, "Hop scan");
+        Display->setFont(ArialMT_Plain_10);
+        Display->drawString(0, 30, msg);
+        Display->display();
+
+        Serial.printf("%s\n", msg);
+      }
       break;
     }
       
@@ -1377,7 +1596,7 @@ void loop()
       Display->clear();
       Display->drawString(0, 0, "Hop scan");
       Display->setFont(ArialMT_Plain_10);
-      sprintf(msg, "Channel #%u (%u/3)", checkChan, timeslotMap[checkChan].entries);
+      sprintf(msg, "Channel #%u (%u/3)", (checkChan+1), timeslotMap[checkChan].entries);
       Display->drawString(0, 26, msg);
       Display->drawString(0, 38, "Map:");
 

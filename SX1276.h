@@ -12,11 +12,13 @@
 #define PA_OUTPUT_RFO_PIN       0
 
 
+
 class SX1276Class {
 public:
   SX1276Class();
 
   int begin();
+  void init();
   void setPins(int ss = SX1276_DEFAULT_SS_PIN, int reset = SX1276_DEFAULT_RESET_PIN, int dio0 = SX1276_DEFAULT_DIO0_PIN);
   void setSPIFrequency(uint32_t frequency);
 
@@ -27,9 +29,13 @@ public:
   void writePayloadLength(uint8_t length);
   void writeBitrate(uint32_t rate);
   void writeFreqDev(uint32_t dev);
+  void writeRxBw(uint32_t bw);
+  void writeAfcBw(uint32_t bw);
+  void writeAfc(uint32_t freq);
   void writeFreq(uint64_t freq);
   void writeRxConfig(uint8_t cfg);
   
+  int32_t readAfc();
   int32_t readFei();
   uint8_t readRssi();
   uint8_t readFifo();
@@ -38,6 +44,7 @@ public:
   void setRx();
   
 private:
+  uint32_t delta(uint32_t ref, uint32_t value);
   SPISettings _spiSettings;
   int _ss;
   int _reset;

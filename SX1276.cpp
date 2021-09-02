@@ -12,6 +12,10 @@
 #define REG_FRF_L                0x08
 #define REG_RXCFG                0x0D
 #define REG_RSSI                 0x11
+#define REG_RXBW                 0x12
+#define REG_AFCBW                0x13
+#define REG_AFC_H                0x1B
+#define REG_AFC_L                0x1C
 #define REG_FEI_H                0x1D
 #define REG_FEI_L                0x1E
 #define REG_PAYLOAD_LEN          0x32
@@ -54,6 +58,14 @@ int SX1276Class::begin()
   { 
     return 0; 
   }
+
+  init();
+
+  return 1;
+}
+
+void SX1276Class::init()
+{
   uint8_t initRegs[] = { 0x01, 0x78, 0x02, 0xB8, 0xD8, 0xFC, 0x8B, 0xFC, 0x49, 0x2B, 0x23, 0x08, 0x02, 0x0A, 0xFF, 0xB9, 0x12, 0x01, 0x28, 0x0C, 0x12, 0x47, 0x32, 0x3E, 0x00, 0x00, 0x00, 0xFD, 0x38, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x05, 0x12, 0x3E, 0x6B, 0x3E, 0x55, 0x55, 0x55, 0x55, 0x55, 0x48, 0x40, 0x17, 0x00, 0x00, 0x0F, 0x00, 0x0C, 0x00, 0xF5, 0x20, 0x82, 0xE2, 0x02, 0xDA, 0x24, 0x00, 0x00, 0x12, 0x24, 0x2D, 0x00, 0x03, 0x00, 0x04, 0x23, 0x00, 0x09, 0x05, 0x84, 0x32, 0x2B, 0x14, 0x00, 0x00, 0x0F, 0x00, 0x00, 0x00, 0x0F, 0xE0, 0x00, 0x0C, 0xD9, 0x07, 0x00, 0x5C, 0x78, 0x00, 0x1C, 0x0E, 0x5B, 0xCC, 0x0E, 0x7F, 0x50, 0x00, 0x00, 0x00, 0x00, 0x09, 0x3F, 0xB1, 0x0B };
 
   setSleep();
@@ -61,18 +73,38 @@ int SX1276Class::begin()
   {
     writeRegister(2 + reg, initRegs[reg]);
   }
+}
 
-  return 1;
+void SX1276Class::writeAfc(uint32_t freq)
+{
+  uint32_t regFreq = (uint64_t)freq * (1<<19) / 32000000ULL;
+  
+  writeRegister(REG_AFC_H, regFreq >> 8);
+  writeRegister(REG_AFC_L, regFreq >> 0);
+}
+
+int32_t SX1276Class::readAfc()
+{
+  int16_t reg = 0;
+
+  reg |= (readRegister(REG_AFC_H) << 8);
+  reg |= (readRegister(REG_AFC_L) << 0);
+
+  int32_t ret = (int64_t)reg * 32000000ULL / (1<<19);
+
+  return ret;
 }
 
 int32_t SX1276Class::readFei()
 {
-  int16_t ret = 0;
+  int16_t reg = 0;
 
-  ret |= (readRegister(REG_FEI_H) << 8);
-  ret |= (readRegister(REG_FEI_L) << 0);
+  reg |= (readRegister(REG_FEI_H) << 8);
+  reg |= (readRegister(REG_FEI_L) << 0);
 
-  return (int64_t)ret * 32000000ULL / (1<<19);
+  int32_t ret = (int64_t)reg * 32000000ULL / (1<<19);
+
+  return ret;
 }
 
 uint8_t SX1276Class::readRssi()
@@ -83,6 +115,60 @@ uint8_t SX1276Class::readRssi()
 uint8_t SX1276Class::readFifo()
 {
   return readRegister(REG_FIFO);
+}
+
+uint32_t SX1276Class::delta(uint32_t ref, uint32_t value)
+{
+  if(ref > value)
+  {
+    return ref - value;
+  }
+
+  return value - ref;
+}
+
+void SX1276Class::writeRxBw(uint32_t bw)
+{
+  uint32_t regBw = 0;
+  uint32_t bestBw = 0;
+
+  for(int exp = 1; exp < 8; exp++)
+  {
+    for(int mant = 0; mant < 3; mant++)
+    {
+      uint32_t matchBw = (8000000 / (16+mant*4)) >> exp;
+
+      if(delta(bw, matchBw) < delta(bw, bestBw))
+      {
+        bestBw = matchBw;
+        regBw = (exp << 0) | (mant << 3);
+      }
+    }
+  }
+  
+  writeRegister(REG_RXBW, regBw);
+}
+
+void SX1276Class::writeAfcBw(uint32_t bw)
+{
+  uint32_t regBw = 0;
+  uint32_t bestBw = 0;
+
+  for(int exp = 1; exp < 8; exp++)
+  {
+    for(int mant = 0; mant < 3; mant++)
+    {
+      uint32_t matchBw = (8000000 / (16+mant*4)) >> exp;
+
+      if(delta(bw, matchBw) < delta(bw, bestBw))
+      {
+        bestBw = matchBw;
+        regBw = (exp << 0) | (mant << 3);
+      }
+    }
+  }
+  
+  writeRegister(REG_AFCBW, regBw);
 }
 
 void SX1276Class::writeBitrate(uint32_t rate)
@@ -144,7 +230,6 @@ void SX1276Class::setSPIFrequency(uint32_t frequency)
 {
   _spiSettings = SPISettings(frequency, MSBFIRST, SPI_MODE0);
 }
-
 
 uint8_t SX1276Class::readRegister(uint8_t address)
 {

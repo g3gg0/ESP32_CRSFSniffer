@@ -28,11 +28,21 @@ void PlotClass::AddSample(float value)
 
 float PlotClass::GetSample(int pos)
 {
+  if(pos >= ValueCount)
+  {
+    return 0;
+  }
+  
   return Values[pos];
 }
 
 void PlotClass::SetSample(int pos, float value)
 {
+  if(pos >= ValueCount)
+  {
+    return;
+  }
+  
   Values[pos] = value;
   if(pos >= Entries)
   {
@@ -113,7 +123,7 @@ void PlotClass::DrawGrid(int x, int y, int w, int h, int *xStart, int *yStart, i
   *ySpan = h-4;
 }
 
-void PlotClass::DrawFullPlot(int x, int y, int w, int h, bool scatter)
+void PlotClass::DrawFullPlot(int x, int y, int w, int h, bool scatter, bool desc)
 {
   float maxValue = 0;
   float minValue = 0;
@@ -162,6 +172,7 @@ void PlotClass::DrawFullPlot(int x, int y, int w, int h, bool scatter)
       Display->setPixel(xPos, yPos);
     }
   }
+
   char msg[33];
   Display->setFont(ArialMT_Plain_10);
   snprintf(msg, 32, "%2.2f", maxValue);
@@ -186,13 +197,15 @@ void PlotClass::DrawFullPlot(int x, int y, int w, int h, bool scatter)
   Display->setColor(WHITE);
   Display->drawString(x+8, y+ySpan-10, msg);
 
-  
-  Display->setFont(ArialMT_Plain_16);
-  Display->drawString(x+w+4, y+4, Name);
-  
-  Display->setFont(ArialMT_Plain_10);
-  snprintf(msg, 32, "(# %d)", Entries);
-  Display->drawString(x+w+4, y+16+4, msg);
+  if(desc)
+  {
+    Display->setFont(ArialMT_Plain_16);
+    Display->drawString(x+w+4, y+4, Name);
+    
+    Display->setFont(ArialMT_Plain_10);
+    snprintf(msg, 32, "(# %d)", Entries);
+    Display->drawString(x+w+4, y+16+4, msg);
+  }
 }
 
 
