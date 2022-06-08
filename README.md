@@ -1,6 +1,7 @@
 # CRSFSniffer
 
 This project is about analyzing the functionality of RC control links on the 868 Mhz band. The code is designed for use with a Heltec LoRa ESP32 with SX127**6** (e.g. https://www.aliexpress.com/item/33018609928.html)
+You can find more details on my blog: https://www.g3gg0.de/wordpress/fpv/fpv-analysis-of-tbs-crossfire/
 
 ## preamble
 
